@@ -316,7 +316,7 @@ for (b in 1:N) {
   #Calculate the relative error between the model prediction and the observed 
   #duration for each runner:
   relative_error_model[b] = abs(last_result_duration[b] - 
-                                  expected_velocity[b])/last_result_duration[b]
+                                  expected_duration[b])/last_result_duration[b]
 }
 #Taking the average of the relative error for every individual we obtain a 
 #relative error for the model:
@@ -368,6 +368,9 @@ draws %>%
   scale_x_continuous(expand = c(0,0), limits = c(0,0.1)) +
   scale_y_continuous(expand = c(0,0), limits = c(0,300)) 
 ```
+
+
+
 ```{r}
 #Relative error of alternative methods:
 
@@ -395,7 +398,7 @@ n_finalists = N #Stores the number of runners the linear model is viable for.
 #For loop looks for every possible runner in the initial database to check if they
 #were excluded from the model for lack of results, if so they are not included here. 
 for (m in 1:max_N) {
-   if ((m + min(dfmof$id)) %in% correlated_id_list == TRUE){
+   if ((m + min(dfmod$id)) %in% correlated_id_list == TRUE){
     
     #Update which individual we are looking at:
     position = position + 1
@@ -423,14 +426,14 @@ for (m in 1:max_N) {
      e_temp <- coef(linearmodtemp)[2] + 1
      #Calculate the predicted duration for the last race distance:
      predicted_duration_linearmodel[position] <- exp((log(last_result_distance[position])- log(s_temp))/e_temp)
-     #Calulate the relative error of this predicted duration:
+     #Calculate the relative error of this predicted duration:
      relative_error_linearmodel[position] = abs(last_result_duration[position] - predicted_duration_linearmodel[position])/last_result_duration[position] 
     }
     else {
      #If the runner does not have sufficient data for a linear model then we set
      #the relative error for that runner to 0 and take one off n_finalists so 
      #that the average relative error does not include this runner:
-     relative_error_duration_tempmodel[position] = 0 
+     relative_error_linearmodel[position] = 0 
      n_finalists = n_finalists - 1
     }
    }
@@ -445,7 +448,7 @@ for (m in 1:max_N) {
 }
 #Finally calculate the average of the relative error for each runner to obtain 
 #the relative error for the model:
-average_relative_error_duration_tempmodel = sum(relative_error_linearmodel)/n_finalists
+average_relative_error_linearmodel = sum(relative_error_linearmodel)/n_finalists
 average_runners_world_relative_error = sum(relative_error_runners_world)/N
 
 
