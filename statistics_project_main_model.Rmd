@@ -26,10 +26,13 @@ df <- read_csv(here("data", "events.csv"),
 ```
 
 ```{r}
-#in this section I took the first 75 runners from the data set to be use to inform my priors
+#Prior information:
+#In this section I took the first 75 runners from the data set to be use to 
+#inform my priors
 df_priorinfo <- df %>% filter(id <=75) 
 #taking a linear model of log V ~ log T, where V is velocity and T is duration
-linearmod <-lm(data = df_priorinfo, formula = I(log(velocity)) ~ I(log(duration)))
+linearmod <-lm(data = df_priorinfo, formula = I(log(velocity)) ~ 
+                 I(log(duration)))
 summary(linearmod)
 s_est <- exp(coef(linearmod)[1])
 e_est <- coef(linearmod)[2] + 1
@@ -38,13 +41,16 @@ e_est <- coef(linearmod)[2] + 1
 
 ```{r} 
 #This is my one runner model: the purpose of this model was to outline methods 
-#required so that they could then be implemented into a bigger model which would cope with more than 
-#just one runner.
+#required so that they could then be implemented into a bigger model which would 
+#cope with more than just one runner.
 
-df253 <- df %>% filter(id == 253) # I chose a random ID of 253 for my one runner model. 
+df253 <- df %>% filter(id == 253) # I chose a random ID of 253 for my one runner
+#model. 
 n <- nrow(df253) #n represents the number of race results
-log_velocity <- log(df253$velocity) #taking the log of the velocity value for each result
-log_duration <- log(df253$duration) # taking the log of the duration for each result
+log_velocity <- log(df253$velocity) #taking the log of the velocity value for 
+#each result
+log_duration <- log(df253$duration) # taking the log of the duration for 
+#each result
  
 #next I set the variables for my three priors: endurance, speed, sigma
 e_a <- 8 
@@ -88,7 +94,8 @@ density_sigma <-  dgamma(seq(from = 0, to = 1, length=1000),
 draws %>%
   ggplot() + 
   geom_function(fun = dbeta, args = list(shape1 = e_a, shape2 = e_b)) + 
-  geom_histogram(mapping = aes(x = endurance, after_stat(density)), alpha = 0.1, binwidth = 0.005) + 
+  geom_histogram(mapping = aes(x = endurance, after_stat(density)), alpha = 0.1, 
+                 binwidth = 0.005) + 
   theme_classic() +
   scale_x_continuous(expand = c(0,0), limits = c(0.45,1)) +
   scale_y_continuous(expand = c(0,0), limits = c(0,110)) 
@@ -97,7 +104,8 @@ draws %>%
 draws %>%
   ggplot() + 
   geom_function(fun = dgamma, args = list(shape = s_shape, rate = s_rate)) + 
-  geom_histogram(mapping = aes(x = speed, after_stat(density)), alpha = 0.1, binwidth = 0.1) + 
+  geom_histogram(mapping = aes(x = speed, after_stat(density)), alpha = 0.1, 
+                 binwidth = 0.1) + 
   theme_classic() +
   scale_x_continuous(expand = c(0,0), limits = c(0,20)) +
   scale_y_continuous(expand = c(0,0), limits = c(0,2)) 
@@ -105,8 +113,10 @@ draws %>%
 #sigma parameter plot of prior & posterior density
 draws %>%
   ggplot() + 
-  geom_function(fun = dgamma, args = list(shape = sigma_shape, rate = sigma_rate)) + 
-  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1, binwidth = 0.0005) + 
+  geom_function(fun = dgamma, args = list(shape = sigma_shape, 
+                                          rate = sigma_rate)) + 
+  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1,
+                 binwidth = 0.0005) + 
   theme_classic() +
   scale_x_continuous(expand = c(0,0), limits = c(0,0.1)) +
   scale_y_continuous(expand = c(0,0), limits = c(0,130)) 
@@ -116,82 +126,128 @@ draws %>%
 
 ```{r}
 #This is my main model:
-dfmod <- df %>% filter(between(id, 1500,1650) )
-linearmod <-lm(data = dfmod, formula = I(log(velocity)) ~ I(log(duration)))
-summary(linearmod)
-index <- dfmod$id - min(dfmod$id) + 1
-n <- nrow(dfmod)
-log_velocity <- log(dfmod$velocity)
-log_duration <- log(dfmod$duration)
-distance <- dfmod$distance
-index <- dfmod$id - min(dfmod$id) + 1
-correlated_ids_for_index <- dfmod$id
-correlated_id_list <- vector()
-min_id <- min(dfmod$id)
-count <- 0 
-id_count <- 0
+
+dfmod <- df %>% filter(between(id, 1500,1650)) #Defining which data to use.
+
+
+index <- dfmod$id - min(dfmod$id) + 1 #Index starts at 1 and stores the sequence
+#for the IDs. This corresponds to the position in correlated_id_list which 
+#stores the ID number for that result.
+correlated_ids <- dfmod$id #Same structure as index but rather than 
+#starting from one it holds the actual ID number for for that result.
+correlated_id_list <- vector() #List of ID numbers in order of results.
+
+n <- nrow(dfmod) #Number of race results we are dealing with.
+max_N <- (max(dfmod$id) - min(dfmod$id)) #Maximum number of runners we could 
+#have.
+
+log_velocity <- log(dfmod$velocity) #Takes the log of all the velocity values.
+log_duration <- log(dfmod$duration) #Takes the log of all duration values.
+distance <- dfmod$distance #Stores the distance of each race result.
+
+
+#the following vectors are used to store the results for the last race for every
+#runner in our data set with more than one race result. 
 last_result_velocity <- vector()
 last_result_duration <- vector()
 last_result_distance <- vector()
-for (e in 1:(max(dfmod$id) - min(dfmod$id) + 1)){
-  if ((e + min(dfmod$id)) %in% dfmod$id == FALSE) {
-    for (k in 1:length(index)){
-      if (index[k] > e) {
-          index[k] = index[k] - 1
-      }
-}
-  }
-}
 
+#The following for loop is used to extract the last race result for every runner
+#in the data. 
+#In the case where a runner only has one results we do not use them in the model 
+#as we have no result to test the model on.
+count <- 0 #Counts how many results have been removed.
+id_count <- 0 #Counts how many id's have more than one result i.e are kept. 
+
+
+
+#This loop takes out the last result for every runner, if they only have one 
+#result this is removed and their ID is taken out.
 for (i in 1:nrow(dfmod)) { 
-  if ((index[i - count - 1] == index[i - count] && index[i- count] != index[i+1 - count]) | (i==nrow(dfmod) &&  index[i - count - 1] == index[i - count])){
-  n = n - 1
-  correlated_ids_for_index = correlated_ids_for_index[- (i - count) ]
-
+  if ((index[i - count - 1] == index[i - count] && 
+       index[i- count] != index[i+1 - count]) 
+      | (i==nrow(dfmod) &&  index[i - count - 1] == index[i - count])){
+  #If this is the last race result for the runner and its not their only race:
+  #Remove one from total number of results to be used:
+  n = n - 1 
+   
+  #Add the result to the relevant last result vectors:
   last_result_velocity[index[i-count]] = exp(log_velocity[i - count])
   last_result_duration[index[i-count]] = exp(log_duration[i - count])
   last_result_distance[index[i-count]] = (distance[i - count])
+  
+  #Removes the result from the vectors to be used in the model:
   distance = distance[- (i- count)]
   log_velocity = log_velocity[- (i- count)]
   log_duration = log_duration[- (i- count)]
+  
+  correlated_id_list[id_count + 1] = correlated_ids[(i - count)]
+ 
+  if (index[i - count + 1] != 1 + index[i - count] && i != nrow(dfmod)) {
+     r <- index[i - count +1 ] - index[i - count]
+     for (k in (i+ 1-count):length(index)){
+       index[k] = index[k] - r + 1
+     }
+     #Remove the ID number for that individual race from the index and 
+  #correlated_ids:
   index = index[- (i -count)]
-  if (i!=nrow(dfmod)){
-  correlated_id_list[id_count + 1] = correlated_ids_for_index[(i - count - 1)]
+  correlated_ids = correlated_ids[- (i - count) ] 
+  count = count +1
+  id_count = id_count + 1
+  } else {
+  #Remove the ID number for that individual race from the index and 
+  #correlated_ids:
+  index = index[- (i -count)]
+  correlated_ids = correlated_ids[- (i - count) ] 
+  count = count + 1 # One more result has been removed.
+  id_count = id_count + 1 #One more ID had more than one result so remains.
   }
-  else {
-      correlated_id_list[id_count + 1] = correlated_ids_for_index[(i - count)]
-
-  }
-  count = count + 1
-id_count = id_count + 1
-}
- else if ((index[i - count - 1] != index[i - count] && index[i- count] != index[i+1 - count])|(i==nrow(dfmod) && index[i - count - 1] != index[i - count])) {
+    }  else if ((index[i - count - 1] != index[i - count] && 
+           index[i- count] != index[i+1 - count])
+          |(i==nrow(dfmod))) {
+  #If this is the only race result for this runner then:
+  #Remove one from total number of results to be used:
   n = n - 1
-  correlated_ids_for_index = correlated_ids_for_index[- (i - count) ]
-   distance = distance[- (i- count)]
+  
+  #Remove the result from the vectors to be used in the model:
+  distance = distance[- (i- count)]
   log_velocity = log_velocity[- (i- count)]
-log_duration = log_duration[- (i- count)]
-index = index[- (i -count)]
-if (i!=nrow(dfmod)) {
-for (k in (i - count):length(index)){
-  index[k] = index[k] - 1
-}
-}
-count = count + 1
+  log_duration = log_duration[- (i- count)]
+
+  #If it is not the last result then we must take one of every index after the
+  #one which is removed in order to keep the sequence correct.
+  if (i!=nrow(dfmod)) {
+   for (k in (i - count + 1):length(index)){
+    index[k] = index[k] - 1
+   }
+  } 
+  
+  if (index[i - count + 1] !=index[i - count] && i != nrow(dfmod)) {
+     r <- index[i - count +1 ] - index[i - count]
+     for (k in (i-count+ 1):length(index)){
+        index[k] = index[k] - r 
+     }
+  #Remove the ID number for that individual race from the index and 
+  #correlated_ids:
+  index = index[- (i -count)]
+  correlated_ids = correlated_ids[- (i - count) ] 
+  count = count +1
+  
+  }else {
+  #Remove the ID number for that individual race from the index and 
+  #correlated_ids:
+  index = index[- (i -count)]
+  correlated_ids = correlated_ids[- (i - count) ] 
+  count = count + 1 #One more result has been removed.
+  }
  }
 }
-N <- max(index)
 
-expected_velocity <- vector(length = N)
-endurance <- matrix(nrow= 4000, ncol = N)
-speed <- matrix(nrow= 4000, ncol = N)
-relative_error_duration <- vector(length= N)
-relative_error_durationA <- vector(length= N)
-predicted_duration_tempmodel <- vector (length = N)
-relative_error_duration_tempmodel <- vector(length = N)
-runners_world_estimate <- vector(length = N)
-relative_error_runners_world <- vector(length = N)
 
+N <- max(index) #How many runners we are dealing with (after the relevant ones 
+#have been removed).
+
+#Defining the variables for the prior distributions:
 e_a <- 8 
 e_b <- 1.6 
 s_shape<- 11.4
@@ -199,8 +255,10 @@ s_rate <- 1
 sigma_shape <- 1
 sigma_rate <- 1 
 
+#Calling the Stan function:
 mod <- cmdstan_model(here("stan", "model.stan"))
 
+#Running the MCMC algorithm:
 fit <- mod$sample(
   data = list(
     n = n,
@@ -220,63 +278,49 @@ fit <- mod$sample(
   refresh = 500
 )
   
+#The draws function outputs parameter values at every draw of every chain.
 draws <- fit$draws(format = "df")
-summary <- fit$summary()
- 
+
+#Next we must calculate the relative error for each runner. To do this we will 
+#take an average of the relative error from the result at every draw. 
 
 
-#calculating the relative errors
+#Store the endurance/speed parameter draw results, each column is for an 
+#individual runner:
+endurance <- matrix(nrow= 4000, ncol = N) 
+speed <- matrix(nrow= 4000, ncol = N)
+
+expected_duration <- vector(length = N) #Stores the average of the expected 
+#duration at each draw for all runners.
+relative_error_model <- vector(length= N) #Stores the overall average of the 
+#relative errors for all runners to give the relative error for the model.
+
+
+#For loop to calculate the average of the relative error for each draw result 
+#for all the runners:
 for (b in 1:N) {
+  
+  #Stores the endurance and speed draw results for the individual runner:
   endurance[,b] = eval(parse(text = paste0("draws$`endurance[", b, "]`")))
   speed[,b] = eval(parse(text = paste0("draws$`speed[", b, "]`")))
-  #results<- (speed[,b]*(last_result_duration[b]^(endurance[,b]-1)))
-  results <- exp((log(last_result_distance[b]) - log(speed[,b]))/endurance[,b])
-  expected_velocity[b] = sum(results)/4000
-  relative_error_duration[b] = abs(last_result_duration[b] - expected_velocity[b])/last_result_duration[b]
+  
+  #Using the endurance and speed value from the draw and the duration of the 
+  #last result in the data set which we stored earlier we can predict the 
+  #duration:
+  duration_draw <- exp((log(last_result_distance[b]) 
+                        - log(speed[,b]))/endurance[,b])
+  
+  #Taking the average of the predicted duration from each draw:
+  expected_duration[b] = sum(duration_draw)/4000
+  
+  #Calculate the relative error between the model prediction and the observed 
+  #duration for each runner:
+  relative_error_model[b] = abs(last_result_duration[b] - 
+                                  expected_velocity[b])/last_result_duration[b]
 }
-average_relative_error = sum(relative_error_duration)/ N
-
-
-
-
-inviable <- vector()
-T= (max(dfmod$id) - min(dfmod$id))
-position = 0
-#LINEAR MODEL ESTIMATES
-#calculating linear model version estimates and the relative error
-n_finalists = N #as we may have some runners with only 2 results and therefore only one for the linear model we must keep track of how many results for the average calculation. 
-for (m in 1:T) {
-   if ((m + min_id) %in% correlated_id_list == TRUE){
-    position = position + 1
-    r = correlated_id_list[position] #go through each id after cleaning has occurred 
-    dftemp <- df %>% filter(id == r) 
-    j = nrow(dftemp)
-    if (dftemp$distance[1] != dftemp$distance[j- 1] && j > 2) {
-     dftemp = dftemp[- c(j),]
-     linearmodtemp <-lm(data = dftemp, formula = I(log(velocity)) ~ I(log(duration)))
-     summary(linearmodtemp)
-     s_temp <- exp(coef(linearmodtemp)[1])
-     e_temp <- coef(linearmodtemp)[2] + 1
-     predicted_duration_tempmodel[position] <- exp((log(last_result_distance[position])- log(s_temp))/e_temp)
-       relative_error_duration_tempmodel[position] = abs(last_result_duration[position] - predicted_duration_tempmodel[position])/last_result_duration[position] 
-
-    }
-    else {
-     inviable[position] = 1
-     relative_error_duration_tempmodel[position] = 0 
-     n_finalists = n_finalists - 1
-    }
-   }
-    distance_raw <- dftemp$distance
-    duration_raw <- dftemp$duration
-    runners_world_estimate[position] = duration_raw[j-1]*(last_result_distance[position]/distance_raw[j-1])^1.06
-    relative_error_runners_world[position] = abs(last_result_duration[position] - runners_world_estimate[position])/last_result_duration[position] 
-}
-average_relative_error_duration_tempmodel = sum(relative_error_duration_tempmodel)/n_finalists
-average_runners_world_relative_error = sum(relative_error_runners_world)/N
-
-
-
+#Taking the average of the relative error for every individual we obtain a 
+#relative error for the model:
+average_relative_error = sum(relative_error_model)/ N
 
 
 
@@ -297,7 +341,8 @@ density_sigma <-  dgamma(grid,sigma_shape,sigma_rate)
 draws %>%
   ggplot() + 
   geom_function(fun = dbeta, args = list(shape1 = e_a, shape2 = e_b)) + 
-  geom_histogram(mapping = aes(x = `endurance[1]`, after_stat(density)), alpha = 0.1, binwidth = 0.005) + 
+  geom_histogram(mapping = aes(x = `endurance[1]`, after_stat(density)), 
+                 alpha = 0.1, binwidth = 0.005) + 
   theme_classic() +
   scale_x_continuous(expand = c(0,0), limits = c(0.45,1)) +
   scale_y_continuous(expand = c(0,0), limits = c(0,70)) 
@@ -306,7 +351,8 @@ draws %>%
 draws %>%
   ggplot() + 
   geom_function(fun = dgamma, args = list(shape = s_shape, rate = s_rate)) + 
-geom_histogram(mapping = aes(x = `speed[1]`, after_stat(density)), alpha = 0.1, binwidth = 0.1) + 
+geom_histogram(mapping = aes(x = `speed[1]`, after_stat(density)), alpha = 0.1, 
+               binwidth = 0.1) + 
   theme_classic() +
   scale_x_continuous(expand = c(0,0), limits = c(0,20)) +
   scale_y_continuous(expand = c(0,0), limits = c(0,1.5)) +
@@ -314,10 +360,98 @@ geom_histogram(mapping = aes(x = `speed[1]`, after_stat(density)), alpha = 0.1, 
 
 draws %>%
   ggplot() + 
-  geom_function(fun = dgamma, args = list(shape = sigma_shape, rate = sigma_rate)) + 
-  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1, binwidth = 0.0005) + 
+  geom_function(fun = dgamma, args = list(shape = sigma_shape, 
+                                          rate = sigma_rate)) + 
+  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1, 
+                 binwidth = 0.0005) + 
   theme_classic() +
   scale_x_continuous(expand = c(0,0), limits = c(0,0.1)) +
   scale_y_continuous(expand = c(0,0), limits = c(0,300)) 
+```
+```{r}
+#Relative error of alternative methods:
+
+#I want to calculate the relative error of two alternative predictors: the
+#linear model and the runners world model (see dissertation for details).
+
+#To store the individual runner predictions we have:
+predicted_duration_linearmodel <- vector (length = N)
+runners_world_prediction <- vector(length = N)
+
+#To store the relative error for each method we have:
+relative_error_linearmodel <- vector(length = N)
+relative_error_runners_world <- vector(length = N)
+
+
+#For the linear model if a runner has only one previous result prior to their 
+#final result or has only got previous results of the same event type then a 
+#linear model can not be used to effectively predict a duration for their final 
+#result, therefore they are not included in the relative error calculations for 
+#the linear model method as the method is un-viable for that individual.
+
+position = 0 #Used to keep track of which runner we are referring to. 
+n_finalists = N #Stores the number of runners the linear model is viable for.
+
+#For loop looks for every possible runner in the initial database to check if they
+#were excluded from the model for lack of results, if so they are not included here. 
+for (m in 1:max_N) {
+   if ((m + min(dfmof$id)) %in% correlated_id_list == TRUE){
+    
+    #Update which individual we are looking at:
+    position = position + 1
+    
+    #Obtain the ID for the individual:
+    r = correlated_id_list[position] 
+    
+    #Obtain the data for and call it dftemp:
+    dftemp <- df %>% filter(id == r) 
+    
+    #Look how many race results this runner has:
+    j = nrow(dftemp) 
+    
+    if (dftemp$distance[1] != dftemp$distance[j- 1] && j > 2) {
+     #If the runner has more than distance in their previous results and has
+     #at least two previous results then:
+      
+     #Take out the final result from the temporary data frame:  
+     dftemp = dftemp[- c(j),]
+     #Define the linear model for this runner:
+     linearmodtemp <-lm(data = dftemp, formula = I(log(velocity)) ~ I(log(duration)))
+     summary(linearmodtemp)
+     #Calculate the speed and endurance parameter from the model:
+     s_temp <- exp(coef(linearmodtemp)[1])
+     e_temp <- coef(linearmodtemp)[2] + 1
+     #Calculate the predicted duration for the last race distance:
+     predicted_duration_linearmodel[position] <- exp((log(last_result_distance[position])- log(s_temp))/e_temp)
+     #Calulate the relative error of this predicted duration:
+     relative_error_linearmodel[position] = abs(last_result_duration[position] - predicted_duration_linearmodel[position])/last_result_duration[position] 
+    }
+    else {
+     #If the runner does not have sufficient data for a linear model then we set
+     #the relative error for that runner to 0 and take one off n_finalists so 
+     #that the average relative error does not include this runner:
+     relative_error_duration_tempmodel[position] = 0 
+     n_finalists = n_finalists - 1
+    }
+   }
+  #Extract the distance and duration data for this runner:
+  distance_raw <- dftemp$distance
+  duration_raw <- dftemp$duration
+  #Selecting the most recent result we input their result into the equation 
+  #used by Runner's World to get a predicted duration:
+  runners_world_prediction[position] = duration_raw[j-1]*(last_result_distance[position]/distance_raw[j-1])^1.06
+  #Calculate the relative error for this prediction:
+  relative_error_runners_world[position] = abs(last_result_duration[position] - runners_world_prediction[position])/last_result_duration[position] 
+}
+#Finally calculate the average of the relative error for each runner to obtain 
+#the relative error for the model:
+average_relative_error_duration_tempmodel = sum(relative_error_linearmodel)/n_finalists
+average_runners_world_relative_error = sum(relative_error_runners_world)/N
+
+
+
+
+
+
 ```
 
