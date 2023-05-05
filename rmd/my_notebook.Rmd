@@ -1,0 +1,366 @@
+title: "Statistics Project"
+author: "Orla Stott"
+output:
+  html_document:
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r}
+library("tidyverse") #loading the packages
+library("here")
+library("janitor")
+library("cmdstanr")
+
+
+df <- read_csv(here("data", "events.csv"), 
+               col_names = c("id", "type", "distance", "duration", "date")) %>%  
+  mutate(date = parse_date(date, format = "[%Y %m %d]")) %>%
+  mutate(velocity = distance / duration)
+
+
+```
+
+```{r}
+
+df0 <- df %>% filter(id <=53) 
+linearmod <-lm(data = df0, formula = I(log(velocity)) ~ I(log(duration)))
+summary(linearmod)
+s_est <- exp(coef(linearmod)[1])
+e_est <- coef(linearmod)[2] + 1
+
+```
+
+
+
+
+```{r}
+#use ID=53 ti simulate the model for just one runner first 
+dfmod <- df %>% filter(id == 53 ) 
+linearmod <-lm(data = dfmod, formula = I(log(velocity)) ~ I(log(duration)))
+summary(linearmod)
+
+n <- nrow(dfmod)
+log_velocity <- log(dfmod$velocity)
+log_duration <- log(dfmod$duration)
+index <- dfmod$id - min(dfmod$id) + 1
+N <- max(index)
+
+e_a <- 8 
+e_b <- 1.6 
+s_shape<- 11.4
+s_rate <- 1
+sigma_shape <- 1
+sigma_rate <- 1 
+
+mod <- cmdstan_model(here("stan", "model.stan"))
+
+fit <- mod$sample(
+  data = list(
+    n = n,
+    N = N,
+    index = index,
+    log_velocity = log_velocity,
+    log_duration = log_duration,
+    e_a = e_a,
+    e_b = e_b,
+    s_shape = s_shape,
+    s_rate = s_rate,
+    sigma_shape = sigma_shape,
+    sigma_rate = sigma_rate),
+  seed= 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+  
+draws <- fit$draws(format = "df")
+grid <- seq(from = 0, to = 1, length=1000)
+
+density_endurance <-  dbeta(grid,e_a, e_b)
+density_speed <-  dgamma(seq(from = 0, to = 20, length=1000),s_shape, s_rate)
+density_sigma <-  dgamma(grid,sigma_shape,sigma_rate)
+
+#plotting endurance 
+
+
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dbeta, args = list(shape1 = e_a, shape2 = e_b)) + 
+  geom_histogram(mapping = aes(x = endurance, after_stat(density)), alpha = 0.1, binwidth = 0.005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0.45,1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,70)) 
+
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = s_shape, rate = s_rate)) + 
+  geom_histogram(mapping = aes(x = speed, after_stat(density)), alpha = 0.1, binwidth = 0.1) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,20)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,1.5)) 
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = sigma_shape, rate = sigma_rate)) + 
+  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1, binwidth = 0.0005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,0.1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,300)) 
+```
+
+
+```{r} 
+#use ID=53 to simulate the model for just one runner first 
+df53 <- df %>% filter(id == 53) 
+linearmod <-lm(data = df0, formula = I(log(velocity)) 
+               ~ I(log(duration)))
+summary(linearmod)
+
+n <- nrow(df53)
+log_velocity <- log(df53$velocity)
+log_duration <- log(df53$duration)
+index <- df53$id - min(df53$id) + 1
+N <- max(index)
+
+e_a <- 8 
+e_b <- 1.6 
+s_shape<- 11.4
+s_rate <- 1
+sigma_shape <- 1
+sigma_rate <- 1 
+mod <- cmdstan_model(here("stan", "test.stan"))
+
+plot(p, density_speed, ylab = 'P.d.f',
+     type = 'l', main = 'Speed Prior')
+
+fit <- mod$sample(
+  data = list(
+    n = n,
+    log_velocity = log_velocity,
+    log_duration = log_duration,
+    e_a = e_a,
+    e_b = e_b,
+    s_shape = s_shape,
+    s_rate = s_rate,
+    sigma_shape = sigma_shape,
+    sigma_rate = sigma_rate),
+  seed= 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+  
+draws <- fit$draws(format = "df")
+grid <- seq(from = 0, to = 1, length=1000)
+
+density_endurance <-  dbeta(grid,e_a, e_b)
+density_speed <-  dgamma(seq(from = 0, to = 20, length=1000),s_shape, s_rate)
+density_sigma <-  dgamma(grid,sigma_shape,sigma_rate)
+
+#plotting endurance 
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dbeta, args = list(shape1 = e_a, shape2 = e_b)) + 
+  geom_histogram(mapping = aes(x = endurance, after_stat(density)), alpha = 0.1, binwidth = 0.005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0.45,1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,70)) 
+
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = s_shape, rate = s_rate)) + 
+  geom_histogram(mapping = aes(x = speed, after_stat(density)), alpha = 0.1, binwidth = 0.1) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,20)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,1.5)) 
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = sigma_shape, rate = sigma_rate)) + 
+  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1, binwidth = 0.0005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,0.1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,300)) 
+
+
+```
+
+
+```{r}
+#using a different ID one model runner 
+df298 <- df %>% filter(id == 298) 
+linearmod <-lm(data = df0, formula = I(log(velocity)) ~ I(log(duration)))
+summary(linearmod)
+
+n <- nrow(df298)
+log_velocity <- log(df298$velocity)
+log_duration <- log(df298$duration)
+index <- df298$id - min(df298$id) + 1
+N <- max(index)
+
+
+e_a <- 8 
+e_b <- 1.6 
+s_shape<- 11.4
+s_rate <- 1
+sigma_shape <- 1
+sigma_rate <- 1 
+
+mod <- cmdstan_model(here("stan", "one_id_stan.stan"))
+
+fit <- mod$sample(
+  data = list(
+    n = n,
+    log_velocity = log_velocity,
+    log_duration = log_duration,
+    e_a = e_a,
+    e_b = e_b,
+    s_shape = s_shape,
+    s_rate = s_rate,
+    sigma_shape = sigma_shape,
+    sigma_rate = sigma_rate),
+  seed= 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+  
+draws <- fit$draws(format = "df")
+grid <- seq(from = 0, to = 1, length=1000)
+
+density_endurance <-  dbeta(grid,e_a, e_b)
+density_speed <-  dgamma(seq(from = 0, to = 20, length=1000),s_shape, s_rate)
+density_sigma <-  dgamma(grid,sigma_shape,sigma_rate)
+
+
+df_endurance <- tibble(
+  x = c(grid),
+  type = rep(c("Prior_E"), each = length(grid)),
+  density = c(density_endurance)
+)
+ 
+df_endurance %>% 
+  ggplot(mapping = aes(x=x, y = density, colour = type, group = type)) + 
+  geom_line() + 
+  geom_histogram(data = draws, mapping = aes(x=endurance, after_stat(density)),inherit.aes = FALSE, alpha = 0.1, binwidth = 0.005)
+
+
+df_speed <- tibble(
+  x = c(seq(from = 0, to = 20, length=1000)),
+  type = rep(c("Prior_Speed"), each = length(grid)),
+  density = c(density_speed)
+)
+ 
+df_speed %>% 
+  ggplot(mapping = aes(x=x, y = density, colour = type, group = type)) + 
+  geom_line() + 
+geom_histogram(data = draws, mapping = aes(x=speed, after_stat(density)),inherit.aes = FALSE, alpha = 0.1, binwidth = 0.1)
+
+
+
+df_sigma <- tibble(
+  x = c(grid),
+  type = rep(c("Prior_Sigma"), each = length(grid)),
+  density = c(density_sigma)
+)
+ 
+df_sigma %>% 
+  ggplot(mapping = aes(x=x, y = density, colour = type, group = type)) + 
+  geom_line() + 
+ geom_histogram(data = draws, mapping = aes(x=sigma, after_stat(density)), inherit.aes = FALSE, alpha = 0.1, binwidth = 0.0005)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r} 
+#Coin Toss 
+aprior <- 2 #defining alpha and beta for the prior
+bprior <- 2
+n_samples <- 15 #how many times are we tossing the coin 
+p = seq(0, 1, length=1000) #seting the interval for the p.d.f plotting
+theta <- rbeta(n = 1, shape1 = aprior, shape2 = bprior) #takes a random  
+#sample from the density function of our prior
+y <- sample(x = 0:1, size = n_samples, replace = TRUE, 
+            prob = c(1 - theta, theta)) #represents the coin toss for 
+#n_samples with the probability of a head = theta 
+apost <- aprior + sum(y) #defining the alpha and beta of our posterior 
+#distribution
+bpost <- bprior + length(y) - sum(y)
+
+density_prior <-  dbeta(grid, aprior, bprior) #defining the prior p.d.f
+
+plot(p, density_prior, ylab = 'P.d.f',
+     type = 'l', main = 'Prior Distribution') #plotting the prior p.d.f
+
+likelihood <- 1000 * p ^ (sum(y)) * (1-p) ^ (length(y) - sum(y))  
+#defining the likelihood p.d.f
+
+plot(p, likelihood, ylab = 'P.d.f',
+     type = 'l', main = 'Likelihood') #plotting the likelihood function
+
+density_post <-  dbeta(grid, apost, bpost) #defining the posterior p.d.f
+
+plot(p, density_post, ylab = 'P.d.f',
+     type = 'l', main = 'Posterior Distribution') #plotting the posterior 
+#distribution
+
+df <- tibble(
+  x = c(p, p, p),
+  type = rep(c("prior", "likelihood", "posterior"), each = length(p)),
+  density = c(density_prior, likelihood, density_post)
+) #set up required to plot the prior,likelihood & posterior on one plot  
+# to compare
+ 
+df %>% 
+  ggplot(mapping = aes(x = x, y = density, colour = type, 
+                       group = type)) + 
+  geom_line() + 
+  geom_vline(xintercept = theta) + #displays a verticle line at the value
+  #of our theta on this sample 
+  labs(x = "theta") #labelling theta 
+
+#using stan on the coin toss example 
+mod <- cmdstan_model(here("stan", "coin_toss_stan.stan"))
+
+fit <- mod$sample(
+  data = list(
+    n_samples=n_samples,
+    y=y,
+    aprior = aprior,
+    bprior = bprior),
+  seed= 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+  
+fit$summary ()
+est <- fit$draws(format = "df")
+
+df %>% 
+  ggplot(mapping = aes(x=x, y = density, colour = type, group = type)) + 
+  geom_line() + 
+  geom_vline(xintercept = theta) + 
+  geom_histogram(data = est, mapping = aes(x=theta, 
+                                           y = stat(count / sum(count))), 
+                 inherit.aes = FALSE, alpha = 0.1)
+  labs(x="theta")
