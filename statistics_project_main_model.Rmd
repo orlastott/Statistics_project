@@ -1,0 +1,323 @@
+title: "statistics_project_main_model"
+author: "Orla Stott"
+output:
+  html_document:
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r}
+library("tidyverse") #loading the packages
+library("here")
+library("janitor")
+library("cmdstanr")
+library("rstan")
+library("bayesplot")
+
+#load in the data set events.csv
+df <- read_csv(here("data", "events.csv"), 
+               col_names = c("id", "type", "distance", "duration", "date")) %>%  
+  mutate(date = parse_date(date, format = "[%Y %m %d]")) %>% #formatting the data
+  mutate(velocity = distance / duration) #calculating velocity from the data
+
+```
+
+```{r}
+#in this section I took the first 75 runners from the data set to be use to inform my priors
+df_priorinfo <- df %>% filter(id <=75) 
+#taking a linear model of log V ~ log T, where V is velocity and T is duration
+linearmod <-lm(data = df_priorinfo, formula = I(log(velocity)) ~ I(log(duration)))
+summary(linearmod)
+s_est <- exp(coef(linearmod)[1])
+e_est <- coef(linearmod)[2] + 1
+
+```
+
+```{r} 
+#This is my one runner model: the purpose of this model was to outline methods 
+#required so that they could then be implemented into a bigger model which would cope with more than 
+#just one runner.
+
+df253 <- df %>% filter(id == 253) # I chose a random ID of 253 for my one runner model. 
+n <- nrow(df253) #n represents the number of race results
+log_velocity <- log(df253$velocity) #taking the log of the velocity value for each result
+log_duration <- log(df253$duration) # taking the log of the duration for each result
+ 
+#next I set the variables for my three priors: endurance, speed, sigma
+e_a <- 8 
+e_b <- 1.6 
+s_shape<- 11.4
+s_rate <- 1
+sigma_shape <- 1
+sigma_rate <- 1 
+ 
+#here I call the stan function for the one runner model
+mod <- cmdstan_model(here("stan", "one_id_stan.stan"))
+
+#next I run MCMC algorithm and set the results as 'fit'
+fit <- mod$sample(
+  data = list(
+    n = n,
+    log_velocity = log_velocity,
+    log_duration = log_duration,
+    e_a = e_a,
+    e_b = e_b,
+    s_shape = s_shape,
+    s_rate = s_rate,
+    sigma_shape = sigma_shape,
+    sigma_rate = sigma_rate),
+  seed= 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+  
+#Extract the results of the MCMC at every draw for each variable
+draws <- fit$draws(format = "df")
+
+#defining the p.d.f for the three parameters in order to plot them:
+density_endurance <-  dbeta(seq(from = 0, to = 1, length=1000),e_a, e_b)
+density_speed <-  dgamma(seq(from = 0, to = 20, length=1000),s_shape, s_rate)
+density_sigma <-  dgamma(seq(from = 0, to = 1, length=1000),
+                         sigma_shape,sigma_rate)
+
+#endurance parameter plot of prior & posterior density
+draws %>%
+  ggplot() + 
+  geom_function(fun = dbeta, args = list(shape1 = e_a, shape2 = e_b)) + 
+  geom_histogram(mapping = aes(x = endurance, after_stat(density)), alpha = 0.1, binwidth = 0.005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0.45,1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,110)) 
+
+#speed parameter plot of prior & posterior density
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = s_shape, rate = s_rate)) + 
+  geom_histogram(mapping = aes(x = speed, after_stat(density)), alpha = 0.1, binwidth = 0.1) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,20)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,2)) 
+
+#sigma parameter plot of prior & posterior density
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = sigma_shape, rate = sigma_rate)) + 
+  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1, binwidth = 0.0005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,0.1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,130)) 
+
+```
+
+
+```{r}
+#This is my main model:
+dfmod <- df %>% filter(between(id, 1500,1650) )
+linearmod <-lm(data = dfmod, formula = I(log(velocity)) ~ I(log(duration)))
+summary(linearmod)
+index <- dfmod$id - min(dfmod$id) + 1
+n <- nrow(dfmod)
+log_velocity <- log(dfmod$velocity)
+log_duration <- log(dfmod$duration)
+distance <- dfmod$distance
+index <- dfmod$id - min(dfmod$id) + 1
+correlated_ids_for_index <- dfmod$id
+correlated_id_list <- vector()
+min_id <- min(dfmod$id)
+count <- 0 
+id_count <- 0
+last_result_velocity <- vector()
+last_result_duration <- vector()
+last_result_distance <- vector()
+for (e in 1:(max(dfmod$id) - min(dfmod$id) + 1)){
+  if ((e + min(dfmod$id)) %in% dfmod$id == FALSE) {
+    for (k in 1:length(index)){
+      if (index[k] > e) {
+          index[k] = index[k] - 1
+      }
+}
+  }
+}
+
+for (i in 1:nrow(dfmod)) { 
+  if ((index[i - count - 1] == index[i - count] && index[i- count] != index[i+1 - count]) | (i==nrow(dfmod) &&  index[i - count - 1] == index[i - count])){
+  n = n - 1
+  correlated_ids_for_index = correlated_ids_for_index[- (i - count) ]
+
+  last_result_velocity[index[i-count]] = exp(log_velocity[i - count])
+  last_result_duration[index[i-count]] = exp(log_duration[i - count])
+  last_result_distance[index[i-count]] = (distance[i - count])
+  distance = distance[- (i- count)]
+  log_velocity = log_velocity[- (i- count)]
+  log_duration = log_duration[- (i- count)]
+  index = index[- (i -count)]
+  if (i!=nrow(dfmod)){
+  correlated_id_list[id_count + 1] = correlated_ids_for_index[(i - count - 1)]
+  }
+  else {
+      correlated_id_list[id_count + 1] = correlated_ids_for_index[(i - count)]
+
+  }
+  count = count + 1
+id_count = id_count + 1
+}
+ else if ((index[i - count - 1] != index[i - count] && index[i- count] != index[i+1 - count])|(i==nrow(dfmod) && index[i - count - 1] != index[i - count])) {
+  n = n - 1
+  correlated_ids_for_index = correlated_ids_for_index[- (i - count) ]
+   distance = distance[- (i- count)]
+  log_velocity = log_velocity[- (i- count)]
+log_duration = log_duration[- (i- count)]
+index = index[- (i -count)]
+if (i!=nrow(dfmod)) {
+for (k in (i - count):length(index)){
+  index[k] = index[k] - 1
+}
+}
+count = count + 1
+ }
+}
+N <- max(index)
+
+expected_velocity <- vector(length = N)
+endurance <- matrix(nrow= 4000, ncol = N)
+speed <- matrix(nrow= 4000, ncol = N)
+relative_error_duration <- vector(length= N)
+relative_error_durationA <- vector(length= N)
+predicted_duration_tempmodel <- vector (length = N)
+relative_error_duration_tempmodel <- vector(length = N)
+runners_world_estimate <- vector(length = N)
+relative_error_runners_world <- vector(length = N)
+
+e_a <- 8 
+e_b <- 1.6 
+s_shape<- 11.4
+s_rate <- 1
+sigma_shape <- 1
+sigma_rate <- 1 
+
+mod <- cmdstan_model(here("stan", "model.stan"))
+
+fit <- mod$sample(
+  data = list(
+    n = n,
+    N = N,
+    index = index,
+    log_velocity = log_velocity,
+    log_duration = log_duration,
+    e_a = e_a,
+    e_b = e_b,
+    s_shape = s_shape,
+    s_rate = s_rate,
+    sigma_shape = sigma_shape,
+    sigma_rate = sigma_rate),
+  seed= 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+  
+draws <- fit$draws(format = "df")
+summary <- fit$summary()
+ 
+
+
+#calculating the relative errors
+for (b in 1:N) {
+  endurance[,b] = eval(parse(text = paste0("draws$`endurance[", b, "]`")))
+  speed[,b] = eval(parse(text = paste0("draws$`speed[", b, "]`")))
+  #results<- (speed[,b]*(last_result_duration[b]^(endurance[,b]-1)))
+  results <- exp((log(last_result_distance[b]) - log(speed[,b]))/endurance[,b])
+  expected_velocity[b] = sum(results)/4000
+  relative_error_duration[b] = abs(last_result_duration[b] - expected_velocity[b])/last_result_duration[b]
+}
+average_relative_error = sum(relative_error_duration)/ N
+
+
+
+
+inviable <- vector()
+T= (max(dfmod$id) - min(dfmod$id))
+position = 0
+#LINEAR MODEL ESTIMATES
+#calculating linear model version estimates and the relative error
+n_finalists = N #as we may have some runners with only 2 results and therefore only one for the linear model we must keep track of how many results for the average calculation. 
+for (m in 1:T) {
+   if ((m + min_id) %in% correlated_id_list == TRUE){
+    position = position + 1
+    r = correlated_id_list[position] #go through each id after cleaning has occurred 
+    dftemp <- df %>% filter(id == r) 
+    j = nrow(dftemp)
+    if (dftemp$distance[1] != dftemp$distance[j- 1] && j > 2) {
+     dftemp = dftemp[- c(j),]
+     linearmodtemp <-lm(data = dftemp, formula = I(log(velocity)) ~ I(log(duration)))
+     summary(linearmodtemp)
+     s_temp <- exp(coef(linearmodtemp)[1])
+     e_temp <- coef(linearmodtemp)[2] + 1
+     predicted_duration_tempmodel[position] <- exp((log(last_result_distance[position])- log(s_temp))/e_temp)
+       relative_error_duration_tempmodel[position] = abs(last_result_duration[position] - predicted_duration_tempmodel[position])/last_result_duration[position] 
+
+    }
+    else {
+     inviable[position] = 1
+     relative_error_duration_tempmodel[position] = 0 
+     n_finalists = n_finalists - 1
+    }
+   }
+    distance_raw <- dftemp$distance
+    duration_raw <- dftemp$duration
+    runners_world_estimate[position] = duration_raw[j-1]*(last_result_distance[position]/distance_raw[j-1])^1.06
+    relative_error_runners_world[position] = abs(last_result_duration[position] - runners_world_estimate[position])/last_result_duration[position] 
+}
+average_relative_error_duration_tempmodel = sum(relative_error_duration_tempmodel)/n_finalists
+average_runners_world_relative_error = sum(relative_error_runners_world)/N
+
+
+
+
+
+
+#PLOTTING THE PRIORS AND POSTERIORS
+p <- seq(from = 0, to = 1, length=1000)
+plot(p, dbeta(p,e_a,e_b), ylab = 'P.d.f',
+     type = 'l', main = 'Endurance Prior')
+plot(p, dgamma(p,s_shape,s_rate), ylab = 'P.d.f',
+     type = 'l', main = 'Speed Prior')
+plot(p, dgamma(p,sigma_shape,sigma_rate), ylab = 'P.d.f',
+     type = 'l', main = 'Sigma Prior')
+
+grid <- seq(from = 0, to = 1, length=1000)
+density_endurance <-  dbeta(grid,e_a, e_b)
+density_speed <-  dgamma(seq(from = 0, to = 20, length=1000),s_shape, s_rate)
+density_sigma <-  dgamma(grid,sigma_shape,sigma_rate)
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dbeta, args = list(shape1 = e_a, shape2 = e_b)) + 
+  geom_histogram(mapping = aes(x = `endurance[1]`, after_stat(density)), alpha = 0.1, binwidth = 0.005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0.45,1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,70)) 
+
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = s_shape, rate = s_rate)) + 
+geom_histogram(mapping = aes(x = `speed[1]`, after_stat(density)), alpha = 0.1, binwidth = 0.1) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,20)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,1.5)) +
+
+
+draws %>%
+  ggplot() + 
+  geom_function(fun = dgamma, args = list(shape = sigma_shape, rate = sigma_rate)) + 
+  geom_histogram(mapping = aes(x = sigma, after_stat(density)), alpha = 0.1, binwidth = 0.0005) + 
+  theme_classic() +
+  scale_x_continuous(expand = c(0,0), limits = c(0,0.1)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,300)) 
+```
+

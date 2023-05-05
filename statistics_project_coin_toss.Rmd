@@ -1,0 +1,90 @@
+title: "statistics_project_coin_toss"
+author: "Orla Stott"
+output:
+  html_document:
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+```{r} 
+#Coin Toss: 
+
+#defining alpha and beta for the prior
+aprior <- 2 
+bprior <- 2
+
+#how many times are we tossing the coin 
+n_samples <- 15 
+
+p = seq(0, 1, length=1000) #sets the intervals for plotting the p.d.f 
+
+#taking a random sample from the p.d.f for our prior parameter theta
+theta <- rbeta(n = 1, shape1 = aprior, shape2 = bprior) 
+
+#likelihood function: tossing a coin n times with probability of a head equal to 
+#prior parameter theta.
+y <- sample(x = 0:1, size = n_samples, replace = TRUE, 
+            prob = c(1 - theta, theta)) 
+
+#From the likelihood then calculate the posterior distribution parameters by the 
+#number of heads. 
+#A head is denoted by a 1, a tail by a 0. Therefore the number of heads is sum(y).
+apost <- aprior + sum(y) 
+bpost <- bprior + length(y) - sum(y)
+
+#From the relative parameters we can then obtain the p.d.f for the distributions:
+density_prior <-  dbeta(p, aprior, bprior) 
+likelihood <- 1000 * p ^ (sum(y)) * (1-p) ^ (length(y) - sum(y))  
+density_post <-  dbeta(p, apost, bpost)
+
+#To see the individual plots for the prior, likelihood and posterior:
+plot(p, density_prior, ylab = 'P.d.f',
+     type = 'l', main = 'Prior Distribution') 
+plot(p, likelihood, ylab = 'P.d.f',
+     type = 'l', main = 'Likelihood') 
+plot(p, density_post, ylab = 'P.d.f',
+     type = 'l', main = 'Posterior Distribution') 
+
+#In order to compare the prior, likelihood, and posterior we set a data frame:
+df <- tibble(
+  x = c(p, p, p),
+  type = rep(c("prior", "likelihood", "posterior"), each = length(p)),
+  density = c(density_prior, likelihood, density_post)
+)
+
+#Now we can plot:
+df %>% 
+  ggplot(mapping = aes(x = x, y = density, colour = type, group = type)) + 
+  geom_line() + 
+  geom_vline(xintercept = theta) + # marks theta vertically on the plot
+  labs(x = "theta") 
+
+#Alternatively, using the Stan function for the coin toss model we have: 
+#Firstly call the Stan function.
+mod <- cmdstan_model(here("stan", "coin_toss_stan.stan"))
+
+#Here we run the MCMC algorithm for the coin toss.
+fit <- mod$sample(
+  data = list(
+    n_samples=n_samples,
+    y=y,
+    aprior = aprior,
+    bprior = bprior),
+  seed= 123,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 500
+)
+
+#The draws function gives us the parameter value for each individual draw in MCMC  
+draws_cointoss <- fit$draws(format = "df")
+
+#to plot the results
+df %>% 
+  ggplot(mapping = aes(x=x, y = density, colour = type, group = type)) + 
+  geom_line() + 
+  geom_vline(xintercept = theta) + 
+  geom_histogram(data = draws_cointoss, mapping = aes(x=theta, 
+                                           y = stat(count / sum(count))), 
+                 inherit.aes = FALSE, alpha = 0.1, binwidth = 0.05)
+  labs(x="theta")
