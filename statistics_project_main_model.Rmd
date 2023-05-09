@@ -354,7 +354,7 @@ average_relative_error_marathon = sum(relative_error_marathon)/ n_marathon_runne
 draws %>%
   ggplot() + 
   geom_function(fun = dbeta, args = list(shape1 = e_a, shape2 = e_b)) + 
-  geom_histogram(mapping = aes(x = `endurance[50]`, after_stat(density)), 
+  geom_histogram(mapping = aes(x = `endurance[120]`, after_stat(density)), 
                  alpha = 0.1, binwidth = 0.005) +
   ylab("P.d.f") +
   xlab("E") +
@@ -367,7 +367,7 @@ draws %>%
 draws %>%
   ggplot() + 
   geom_function(fun = dgamma, args = list(shape = s_shape, rate = s_rate)) + 
-  geom_histogram(mapping = aes(x = `speed[50]`, after_stat(density)), alpha = 0.1, 
+  geom_histogram(mapping = aes(x = `speed[120]`, after_stat(density)), alpha = 0.1, 
                binwidth = 0.1) +
   ylab("P.d.f") +
   xlab("S") +
@@ -387,8 +387,8 @@ draws %>%
   scale_y_continuous(expand = c(0,0), limits = c(0,1250)) 
 
 #Plotting credible intervals for ID 50,120 which corresponds to ID 3054 & 3131:
-mcmc_intervals(draws[c(51,121)]) #Endurance.
-mcmc_intervals(draws[c(188,258)]) #Speed.
+mcmc_intervals(draws[c(51,86,121)]) #Endurance.
+mcmc_intervals(draws[c(188,223,258)]) #Speed.
 mcmc_intervals(draws[276]) #Sigma.
 
 
